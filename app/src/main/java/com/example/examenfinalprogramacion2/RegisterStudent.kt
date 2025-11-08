@@ -1,4 +1,4 @@
-package com.example.examenfinalprogramacion2.ui
+package com.example.examenfinalprogramacion2.estudiante
 
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult

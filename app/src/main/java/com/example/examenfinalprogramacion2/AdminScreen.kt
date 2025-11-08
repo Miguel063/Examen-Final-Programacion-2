@@ -77,7 +77,7 @@ fun AdminScreen(navController: NavController) {
                                 Button(onClick = {
                                     scope.launch {
                                         message = "Marcando devuelto..."
-                                        val res = FirestoreRepository.marcarDevuelto(p["id"].toString(), "admin_demo")
+                                        val res = FirestoreRepository.marcarDevuelto(p["id"].toString())
                                         message = if (res.isSuccess) "Devuelto" else "Error: ${res.exceptionOrNull()?.message}"
                                     }
                                 }) { Text("Devolver") }

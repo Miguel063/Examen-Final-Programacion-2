@@ -1,31 +1,22 @@
 package com.example.examenfinalprogramacion2.firebase
 
 import android.net.Uri
-import android.content.Context
 import com.example.examenfinalprogramacion2.model.Student
-import com.google.firebase.Timestamp
-import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.storage.FirebaseStorage
 import kotlinx.coroutines.tasks.await
 
 object FirestoreRepository {
 
-    suspend fun registrarStudent(context: Context, student: Student, photoUri: Uri?): Result<Unit> {
+    suspend fun registrarStudent(student: Student, photoUri: Uri?): Result<Unit> {
         return try {
             val db = FirebaseFirestore.getInstance()
             val storage = FirebaseStorage.getInstance()
             var photoUrl: String? = student.photoUrl
 
             if (photoUri != null) {
-                val inputStream = context.contentResolver.openInputStream(photoUri)
-                    ?: throw Exception("No se puede abrir la imagen desde el URI")
-
-                val bytes = inputStream.readBytes()
-                inputStream.close()
-
                 val ref = storage.reference.child("students/${student.carnet}.jpg")
-                ref.putBytes(bytes).await()
+                ref.putFile(photoUri).await()
                 photoUrl = ref.downloadUrl.await().toString()
             }
 
@@ -49,8 +40,7 @@ object FirestoreRepository {
                 "equipoId" to equipoId,
                 "equipoNombre" to equipoNombre,
                 "cantidad" to cantidad,
-                "status" to "pending",
-                "requestedAt" to Timestamp.now()
+                "status" to "pending"
             )
 
             db.collection("prestamo").add(prestamo).await()
@@ -63,33 +53,8 @@ object FirestoreRepository {
     suspend fun aprobarPrestamo(prestamoId: String, adminId: String): Result<Unit> {
         return try {
             val db = FirebaseFirestore.getInstance()
-            val prestamoRef = db.collection("prestamo").document(prestamoId)
-
-            db.runTransaction { tx ->
-                val prestamoSnap = tx.get(prestamoRef)
-                if (!prestamoSnap.exists()) throw Exception("Préstamo no encontrado")
-
-                val status = prestamoSnap.getString("status") ?: "pending"
-                if (status != "pending") throw Exception("Solo préstamos pendientes pueden aprobarse")
-
-                val equipoId = prestamoSnap.getString("equipoId") ?: throw Exception("equipoId faltante")
-                val cantidad = (prestamoSnap.getLong("cantidad") ?: 0L)
-
-                val equipoRef = db.collection("equipo").document(equipoId)
-                val equipoSnap = tx.get(equipoRef)
-                if (!equipoSnap.exists()) throw Exception("Equipo no existe")
-
-                val disponible = equipoSnap.getLong("cantidadDisponible") ?: 0L
-                if (disponible < cantidad) throw Exception("No hay unidades suficientes disponibles")
-
-                tx.update(equipoRef, "cantidadDisponible", disponible - cantidad)
-                tx.update(prestamoRef, mapOf(
-                    "status" to "approved",
-                    "approvedBy" to adminId,
-                    "approvedAt" to FieldValue.serverTimestamp()
-                ))
-            }.await()
-
+            db.collection("prestamo").document(prestamoId)
+                .update("status", "approved", "approvedBy", adminId).await()
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
@@ -99,50 +64,19 @@ object FirestoreRepository {
     suspend fun rechazarPrestamo(prestamoId: String, adminId: String): Result<Unit> {
         return try {
             val db = FirebaseFirestore.getInstance()
-            val prestamoRef = db.collection("prestamo").document(prestamoId)
-            prestamoRef.update(
-                mapOf(
-                    "status" to "rejected",
-                    "rejectedBy" to adminId,
-                    "rejectedAt" to FieldValue.serverTimestamp()
-                )
-            ).await()
+            db.collection("prestamo").document(prestamoId)
+                .update("status", "rejected", "approvedBy", adminId).await()
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
-    suspend fun marcarDevuelto(prestamoId: String, adminId: String? = null): Result<Unit> {
+    suspend fun marcarDevuelto(prestamoId: String): Result<Unit> {
         return try {
             val db = FirebaseFirestore.getInstance()
-            val prestamoRef = db.collection("prestamo").document(prestamoId)
-
-            db.runTransaction { tx ->
-                val prestamoSnap = tx.get(prestamoRef)
-                if (!prestamoSnap.exists()) throw Exception("Préstamo no encontrado")
-
-                val status = prestamoSnap.getString("status") ?: "pending"
-                if (status != "approved") throw Exception("Solo préstamos aprobados pueden marcarse como devueltos")
-
-                val equipoId = prestamoSnap.getString("equipoId") ?: throw Exception("equipoId faltante")
-                val cantidad = (prestamoSnap.getLong("cantidad") ?: 0L)
-
-                val equipoRef = db.collection("equipo").document(equipoId)
-                val equipoSnap = tx.get(equipoRef)
-                if (!equipoSnap.exists()) throw Exception("Equipo no existe")
-
-                val disponible = equipoSnap.getLong("cantidadDisponible") ?: 0L
-                tx.update(equipoRef, "cantidadDisponible", disponible + cantidad)
-
-                val updates = mutableMapOf<String, Any>(
-                    "status" to "returned",
-                    "returnedAt" to FieldValue.serverTimestamp()
-                )
-                adminId?.let { updates["returnedBy"] = it }
-                tx.update(prestamoRef, updates)
-            }.await()
-
+            db.collection("prestamo").document(prestamoId)
+                .update("status", "returned").await()
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
